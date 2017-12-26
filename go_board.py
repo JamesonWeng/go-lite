@@ -80,14 +80,17 @@ class GoBoard(object):
 
         self._history = []
         self._ko_point = None
+        self._next_color = Color.BLACK
         self._size = size
 
     # color must be one of Color.BLACK or Color.WHITE
-    def place_stone(self, coords, color):
+    def place_stone(self, coords):
         row_idx, col_idx = coords
         point = self._board[row_idx][col_idx]
 
-        point.color = color
+        point.color = self._next_color
+
+        self._next_color = Color.BLACK if self._next_color == Color.WHITE else Color.WHITE
 
     @property
     def board(self):
