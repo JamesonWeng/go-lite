@@ -21,6 +21,9 @@ DISPLAY_WIDTH = (GRID_NUM_COLUMNS  - 1) * GRID_SPACING + GRID_BORDER * 2
 
 LINE_WIDTH = 4
 
+# logging
+logging.basicConfig(level=logging.DEBUG)
+
 # set up the window
 pygame.init()
 display_surface = pygame.display.set_mode((DISPLAY_WIDTH, DISPLAY_HEIGHT))
