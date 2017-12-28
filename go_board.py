@@ -1,10 +1,7 @@
 import enum
 import logging
 import numpy as np
-import matplotlib.pyplot as plt
-import numpy as np
 import os
-from PIL import Image
 
 class Color(enum.Enum):
     BLACK = enum.auto()
