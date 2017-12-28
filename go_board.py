@@ -161,13 +161,16 @@ class GoBoard(object):
             if adj_point.color == Color.UNOCCUPIED:
                 logging.debug('found liberty: {}'.format(adj_point))
                 liberties.add(adj_point)
+
+                # we have a liberty, so the move is valid
                 valid_move = True
 
             elif adj_point.color == self._next_color:
                 logging.debug('found same color group {}'.format(adj_point.group))
-
                 same_color_groups.append(adj_point.group)
-                if len(adj_point.group.liberties) > 1: # the group has a liberty even after we place the stone
+
+                # the move is valid if group would have a liberty even after we place the stone
+                if len(adj_point.group.liberties) > 1:
                     valid_move = True
 
             elif adj_point.color == opposite_color:
@@ -175,10 +178,12 @@ class GoBoard(object):
 
                 opposite_color_groups.append(adj_point.group)
 
+                # move is valid if we would capture a group of the oppposite color
+                # that is not forbidden by the ko rule
                 adj_group = adj_point.group
                 would_capture = len(adj_group.liberties) <= 1
                 not_ko_point = len(adj_group.points) > 1 or self._ko_point not in adj_group.points
-                if would_capture and not_ko_point: # we would capture the group
+                if would_capture and not_ko_point:
                     valid_move = True
 
         if not valid_move:
@@ -208,11 +213,8 @@ class GoBoard(object):
         self._next_color = opposite_color
         return True
 
-    @property
-    def board(self):
-        return self._board
-
-
+    def __getitem__(self, key):
+        return self._board[key]
 
 
 

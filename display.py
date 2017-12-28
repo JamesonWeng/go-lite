@@ -1,9 +1,9 @@
 from go_board import Color, GoBoard
-
 import pygame
 
-# class to display go board to the screen
 
+
+# class to handle drawing / user input for the go board
 class GoDisplay(object):
 	BLACK = (0, 0, 0)
 	BROWN = (165, 42, 42)
@@ -37,14 +37,13 @@ class GoDisplay(object):
 
 	def _get_grid_coords(self, display_coords):
 		x, y = display_coords
-		in_x = x >= self.grid_x1 - self.grid_x_spacing / 2 and x <= self.grid_x2 + self.grid_x_spacing / 2
-		in_y = y >= self.grid_y1 - self.grid_y_spacing / 2 and y <= self.grid_y2 + self.grid_y_spacing / 2
-
-		if not(in_x and in_y):
-			return None
 
 		col_idx = int((x + self.grid_x_spacing / 2 - self.grid_x1) / self.grid_x_spacing)
 		row_idx = int((y + self.grid_y_spacing / 2 - self.grid_y1) / self.grid_y_spacing)
+
+		if row_idx < 0 or row_idx >= self.num_rows or col_idx < 0 or col_idx >= self.num_cols:
+			return None
+
 		return row_idx, col_idx
 
 	def draw(self, surface):
@@ -68,7 +67,7 @@ class GoDisplay(object):
 				self.line_width,
 			)
 
-		for row_idx, row in enumerate(self.board.board):
+		for row_idx, row in enumerate(self.board):
 			for col_idx, point in enumerate(row):
 				if point.color == Color.UNOCCUPIED:
 					continue
