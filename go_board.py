@@ -84,6 +84,9 @@ class Group(object):
     def add_liberties(self, liberties):
         self._liberties |= liberties
 
+    # removes the specified liberty
+    # and deletes the pieces from the board if no liberties left
+    # returns the points that were captured
     def remove_liberty(self, board, point):
         self._liberties.discard(point)
         if not self._liberties:
@@ -97,6 +100,8 @@ class Group(object):
                     if adj_p.color != Color.UNOCCUPIED:
                         logging.debug('returning liberties to: {}'.format(adj_p.group))
                         adj_p.group._liberties.add(p)
+            return self._points
+        return set()
 
     def __repr__(self):
         return 'liberties: {}, points: {}'.format(self._liberties, self._points)
@@ -141,8 +146,8 @@ class GoBoard(object):
         logging.debug('trying to place {} stone at {}'.format(self._next_color, coords))
         row_idx, col_idx = coords
 
-        point = self._board[row_idx][col_idx]
-        if point.color != Color.UNOCCUPIED:
+        target_point = self._board[row_idx][col_idx]
+        if target_point.color != Color.UNOCCUPIED:
             logging.debug('point is already occupied')
             return False
 
@@ -153,7 +158,7 @@ class GoBoard(object):
         liberties = set()
         valid_move = False
 
-        for adj_point in self.get_adjacent_points(point):
+        for adj_point in self.get_adjacent_points(target_point):
             logging.debug('adj point: {}'.format(adj_point))
 
             if adj_point.color == Color.UNOCCUPIED:
@@ -172,7 +177,11 @@ class GoBoard(object):
                 logging.debug('found opposite color group {}'.format(adj_point.group))
 
                 opposite_color_groups.append(adj_point.group)
-                if len(adj_point.group.liberties) <= 1: # we would capture a group
+
+                adj_group = adj_point.group
+                would_capture = len(adj_group.liberties) <= 1
+                not_ko_point = len(adj_group.points) > 1 or self._ko_point not in adj_group.points
+                if would_capture and not_ko_point: # we would capture the group
                     valid_move = True
 
         if not valid_move:
@@ -180,16 +189,23 @@ class GoBoard(object):
 
         # place stone and merge with adjacent groups
         new_group = Group.merge(same_color_groups)
-        point.color = self._next_color
-        new_group.add_stone(point)
+        target_point.color = self._next_color
+        new_group.add_stone(target_point)
         new_group.add_liberties(liberties)
 
         logging.debug('created group with liberties: {} and points: {}'.format(new_group.liberties, new_group.points))
 
         # remove liberties from opposite color groups
         # and delete if needed
+        captured_points = set()
         for group in opposite_color_groups:
-            group.remove_liberty(self, point)
+            captured_points |= group.remove_liberty(self, target_point)
+
+        # update ko point
+        if len(captured_points) == 1:
+            self._ko_point = target_point
+        else:
+            self._ko_point = None
         
         # set next color
         self._next_color = opposite_color
