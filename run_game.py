@@ -1,4 +1,5 @@
-from go_display import GoDisplay
+from game_display import GoDisplay
+from go_implementation import GoGame
 
 import logging
 import pygame
@@ -11,10 +12,13 @@ logging.basicConfig(level=logging.DEBUG)
 # set up the window
 pygame.init()
 display_surface = pygame.display.set_mode((1000, 500))
-pygame.display.set_caption('Go Lite')
+pygame.display.set_caption("Go Lite")
 
+go_game = GoGame(board_size=(5, 10))
 go_display = GoDisplay(
-	num_rows=5, num_cols=10, grid_height=200, grid_width=500, grid_x1=50, grid_y1=50,
+	go_game=go_game,
+	display_coords=(50, 50),
+	display_size=(200, 500),
 )
 
 # game loop
@@ -28,3 +32,7 @@ while True:
 
 	go_display.draw(display_surface)
 	pygame.display.update()
+
+	if go_game.is_finished():
+		logger.debug(go_game.get_scores())
+		break
