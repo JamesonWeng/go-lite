@@ -1,3 +1,4 @@
+import copy
 import enum
 import logging
 import numpy as np
@@ -21,109 +22,67 @@ class Color(enum.Enum):
             raise Exception("Bad color")
 
 
-class Point(object):
-    """
-        represents a point on the board, which can be either occupied or unoccupied
-        if occupied, it belongs to a group of stones
-    """
-
-    def __init__(self, coords):
-        self._row_idx, self._col_idx = coords
-
-        self._group = None
-        self._color = Color.UNOCCUPIED
-
-    @property
-    def col_idx(self):
-        return self._col_idx
-
-    @property 
-    def row_idx(self):
-        return self._row_idx
-
-    @property
-    def group(self):
-        return self._group
-
-    @group.setter
-    def group(self, val):
-        self._group = val
-
-    @property
-    def color(self):
-        return self._color
-
-    @color.setter
-    def color(self, val):
-        self._color = val
-
-    def __hash__(self):
-        return hash((self._row_idx, self._col_idx))
-
-    def __repr__(self):
-        return "({}, {}, {})".format(self._row_idx, self._col_idx, self._color)
-
-
 class Group(object):
     """ represents a cluster of stones that are directly touching one another """
 
-    def __init__(self, liberties=set(), points=set()):
-        self._liberties = liberties
-        self._points = points
-        for p in points:
-            p.group = self
+    def __init__(self, go_board, liberties=set(), stones=set()):
+        self._go_board = go_board
+        self.liberties = liberties
+        self.stones = stones
 
-    @property
-    def liberties(self):
-        return self._liberties
-
-    @property
-    def points(self):
-        return self._points
+        for coords in self.stones:
+            self._go_board.coords_to_group[coords] = self
 
     @staticmethod
-    def merge(groups):
+    def merge(go_board, groups):
         liberties = set()
-        points = set()
+        stones = set()
 
         for group in groups:
             liberties |= group.liberties
-            points |= group.points
+            stones |= group.stones
 
-        new_group = Group(liberties, points)
+        new_group = Group(go_board, liberties, stones)
         return new_group
 
-    def add_stone(self, point):
-        self._points.add(point)
-        self._liberties.discard(point)
-        point.group = self
-
     def add_liberties(self, liberties):
-        self._liberties |= liberties
+        self.liberties |= liberties
 
-    def remove_liberty(self, board, point):
+    def add_stone(self, coords):
+        self.liberties.discard(coords)
+        self.stones.add(coords)
+        self._go_board.coords_to_group[coords] = self
+
+    def remove_liberty(self, point):
         """
             removes the specified liberty, and deletes the group from the board if there are no liberties left
             returns the points that were captured
         """
 
-        self._liberties.discard(point)
-        if not self._liberties:
+        self.liberties.discard(point)
+        if not self.liberties:
+
+
             # delete group since we have no liberties
-            for p in self._points:
-                p.color = Color.UNOCCUPIED
-                p.group = None
+            for coords in self.stones:
+                print(self._go_board[coords])
+
+                self._go_board[coords] = Color.UNOCCUPIED
+                self._go_board.coords_to_group[coords] = None
+
             # update liberties of adjacent groups
-            for p in self._points:
-                for adj_p in board.get_adjacent_points(p):
-                    if adj_p.color != Color.UNOCCUPIED:
-                        logging.debug("returning liberties to: {}".format(adj_p.group))
-                        adj_p.group._liberties.add(p)
-            return self._points
+            for coords in self.stones:
+                for adj_coords in self._go_board.get_adjacent_coords(coords):
+                    if self._go_board[adj_coords] != Color.UNOCCUPIED:
+                        adj_group = self._go_board.coords_to_group[adj_coords]
+                        logging.debug("returning liberties to: {}".format(adj_group))
+                        adj_group.liberties.add(coords)
+
+            return self.stones
         return set()
 
     def __repr__(self):
-        return "liberties: {}, points: {}".format(self._liberties, self._points)
+        return "liberties: {}, stones: {}".format(self.liberties, self.stones)
 
 
 class GoBoard(object):
@@ -133,42 +92,43 @@ class GoBoard(object):
     """
 
     def __init__(self, board_size):
-        self._num_rows, self._num_cols = board_size
-        self._board = [
-            [Point((row_idx, col_idx)) for col_idx in range(self._num_cols)]
-            for row_idx in range(self._num_rows)
-        ]
+        self._board = np.full(board_size, Color.UNOCCUPIED)
         self._ko_point = None
+        self.coords_to_group = {}
 
     def __getitem__(self, key):
         return self._board[key]
 
+    def __setitem__(self, key, value):
+        self._board[key] = value
+
     @property
     def num_rows(self):
-        return self._num_rows
+        return self._board.shape[0]
 
     @property
     def num_cols(self):
-        return self._num_cols
+        return self._board.shape[1]
 
-    def get_adjacent_points(self, point):
+    def get_adjacent_coords(self, coords):
         """
-            get a list of points on the board that are adjacent to the given point,
-            excluding diagonally adjacent points
+            get a list of coords on the board that are adjacent to the given coords,
+            excluding diagonally adjacent coords
         """
 
+        row_idx, col_idx = coords
         adj_coords = [
-            (point.row_idx - 1, point.col_idx),
-            (point.row_idx, point.col_idx - 1),
-            (point.row_idx + 1, point.col_idx),
-            (point.row_idx, point.col_idx + 1),
+            (row_idx - 1, col_idx),
+            (row_idx, col_idx - 1),
+            (row_idx + 1, col_idx),
+            (row_idx, col_idx + 1),
         ]
-        adj_points = [
-            self._board[row_idx][col_idx]
-            for row_idx, col_idx in adj_coords
-            if 0 <= row_idx and row_idx < self._num_rows and 0 <= col_idx and col_idx < self._num_cols
+        adj_coords = [
+            (row_idx, col_idx) for row_idx, col_idx in adj_coords
+            if 0 <= row_idx and row_idx < self.num_rows 
+            and 0 <= col_idx and col_idx < self.num_cols
         ]
-        return adj_points
+        return adj_coords
 
 
     def place_stone(self, coords, color):
@@ -178,10 +138,8 @@ class GoBoard(object):
         """
 
         logging.debug("attempting to place {} stone at {}".format(color, coords))
-        row_idx, col_idx = coords
 
-        target_point = self._board[row_idx][col_idx]
-        if target_point.color != Color.UNOCCUPIED:
+        if self._board[coords] != Color.UNOCCUPIED:
             logging.debug("point is already occupied")
             return False
 
@@ -192,33 +150,35 @@ class GoBoard(object):
         liberties = set()
         valid_move = False
 
-        for adj_point in self.get_adjacent_points(target_point):
-            logging.debug("adj point: {}".format(adj_point))
+        for adj_coords in self.get_adjacent_coords(coords):
+            logging.debug("adj coord: {}".format(adj_coords))
 
-            if adj_point.color == Color.UNOCCUPIED:
+            adj_point = self._board[adj_coords]
+            adj_group = self.coords_to_group.get(adj_coords)
+
+            if adj_point == Color.UNOCCUPIED:
                 logging.debug("found liberty: {}".format(adj_point))
-                liberties.add(adj_point)
+                liberties.add(adj_coords)
 
                 # we have a liberty, so the move is valid
                 valid_move = True
 
-            elif adj_point.color == color:
-                logging.debug("found same color group {}".format(adj_point.group))
-                same_color_groups.append(adj_point.group)
+            elif adj_point == color:
+                logging.debug("found same color group {}".format(adj_group))
+                same_color_groups.append(adj_group)
 
                 # the move is valid if group would have a liberty even after we place the stone
-                if len(adj_point.group.liberties) > 1:
+                if len(adj_group.liberties) > 1:
                     valid_move = True
 
-            elif adj_point.color == opposite_color:
-                logging.debug("found opposite color group {}".format(adj_point.group))
-                opposite_color_groups.append(adj_point.group)
+            elif adj_point == opposite_color:
+                logging.debug("found opposite color group {}".format(adj_group))
+                opposite_color_groups.append(adj_group)
 
                 # move is valid if we would capture a group of the oppposite color
                 # that is not forbidden by the ko rule
-                adj_group = adj_point.group
                 would_capture = len(adj_group.liberties) <= 1
-                not_ko_point = len(adj_group.points) > 1 or self._ko_point not in adj_group.points
+                not_ko_point = len(adj_group.stones) > 1 or self._ko_point not in adj_group.stones
                 if would_capture and not_ko_point:
                     valid_move = True
 
@@ -226,22 +186,23 @@ class GoBoard(object):
             return False
 
         # place stone and merge with adjacent groups
-        new_group = Group.merge(same_color_groups)
-        target_point.color = color
-        new_group.add_stone(target_point)
+        self._board[coords] = color
+
+        new_group = Group.merge(self, same_color_groups)
+        new_group.add_stone(coords)
         new_group.add_liberties(liberties)
 
-        logging.debug("created group with liberties: {} and points: {}".format(new_group.liberties, new_group.points))
+        logging.debug("created group with liberties: {} and points: {}".format(new_group.liberties, new_group.stones))
 
         # remove liberties from opposite color groups
         # and delete if needed
         captured_points = set()
         for group in opposite_color_groups:
-            captured_points |= group.remove_liberty(self, target_point)
+            captured_points |= group.remove_liberty(coords)
 
         # update ko point
         if len(captured_points) == 1:
-            self._ko_point = target_point
+            self._ko_point = coords
         else:
             self._ko_point = None
 
@@ -270,7 +231,18 @@ class GoGame(object):
     def board(self):
         return self._board
 
+    @property
+    def next_color(self):
+        return self._next_color
+
+    def is_finished(self):
+        return self._num_consecutive_passes >= 2 or self._num_moves > self.MAX_MOVES
+
     def place_stone(self, coords):
+        if self.is_finished():
+            logging.debug("game has already ended")
+            return False
+
         valid_move = self._board.place_stone(coords, self._next_color)
         if valid_move:
             self._next_color = Color.get_opposite_color(self._next_color)
@@ -279,10 +251,10 @@ class GoGame(object):
         return valid_move
 
     def pass_turn(self):
+        if self.is_finished():
+            logging.debug("game has already ended")
+            return
         self._num_consecutive_passes += 1
-
-    def is_finished(self):
-        return self._num_consecutive_passes >= 2 or self._num_moves > self.MAX_MOVES
 
     def _get_score(self, color):
         """
@@ -294,29 +266,34 @@ class GoGame(object):
         # we calculate the points by floodfilling the board starting from stones of opposite color
         # the non-filled squares are the points that the current color has
 
-        def flood_fill(board, point, color):
+        def flood_fill(board, coords, color, first_call=True):
             # for efficiency, we stop once we reach a colored point
-            if point.color == Color.UNOCCUPIED: 
-                point.color = color
-                for adj_point in board.get_adjacent_points(point):
-                    flood_fill(board, adj_point, color)
+            # on the first call, we are allowed to start from a point of the desired color
+
+            should_flood = (
+                (not first_call and board[coords] == Color.UNOCCUPIED) or 
+                (first_call and board[coords] == color)
+            )
+            if should_flood:
+                board[coords] = color
+                for adj_coords in board.get_adjacent_coords(coords):
+                    flood_fill(board, adj_coords, color, False)
+
 
         # flood fill changes the board
         # so we do it on a copy
         score_board = copy.deepcopy(self._board)
         opposite_color = Color.get_opposite_color(color)
-        for row in score_board:
-            for point in row:
-                # flood fill adjacent squares if it's the opposite color
-                if point.color == opposite_color:
-                    for adj_point in score_board.get_adjacent_points(point):
-                        flood_fill(score_board, adj_point, opposite_color)
+
+        for row_idx in range(score_board.num_rows):
+            for col_idx in range(score_board.num_cols):
+                flood_fill(score_board, (row_idx, col_idx), opposite_color)
 
         # count the number of non flood-filled squares
         score = 0
         for row in score_board:
             for point in row:
-                if point.color != opposite_color:
+                if point != opposite_color:
                     score += 1
         return score
 
@@ -332,7 +309,7 @@ class GoGame(object):
 
     def get_winner(self):
         scores = self.get_scores()
-        return scores.keys()[np.argmax(scores.values())]
+        return list(scores.keys())[np.argmax(scores.values())]
 
 
 
