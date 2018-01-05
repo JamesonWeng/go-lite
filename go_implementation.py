@@ -309,7 +309,9 @@ class GoGame(object):
 
     def get_winner(self):
         scores = self.get_scores()
-        return list(scores.keys())[np.argmax(scores.values())]
+        keys = list(scores.keys())
+        values = list(scores.values())
+        return keys[np.argmax(values)]
 
 
 
