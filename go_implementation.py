@@ -263,6 +263,9 @@ class GoGame(object):
             - the number of empty points that reach only the player's stones
         """
 
+        if self._num_moves == 0:
+            return 0
+
         # we calculate the points by floodfilling the board starting from stones of opposite color
         # the non-filled squares are the points that the current color has
 
