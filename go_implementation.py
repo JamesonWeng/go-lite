@@ -110,10 +110,16 @@ class GoBoard(object):
     def num_cols(self):
         return self._board.shape[1]
 
+    def _is_valid_coords(self, coords):
+        row_idx, col_idx = coords
+        row_valid = 0 <= row_idx and row_idx < self.num_rows
+        col_valid = 0 <= col_idx and col_idx < self.num_cols
+        return row_valid and col_valid
+
     def get_adjacent_coords(self, coords):
         """
-            get a list of coords on the board that are adjacent to the given coords,
-            excluding diagonally adjacent coords
+            get a list of coords on the board that are directly adjacent to the given coords,
+            (excludes diagonally adjacent coords)
         """
 
         row_idx, col_idx = coords
@@ -124,31 +130,58 @@ class GoBoard(object):
             (row_idx, col_idx + 1),
         ]
         adj_coords = [
-            (row_idx, col_idx) for row_idx, col_idx in adj_coords
-            if 0 <= row_idx and row_idx < self.num_rows 
-            and 0 <= col_idx and col_idx < self.num_cols
+            coords for coords in adj_coords
+            if self._is_valid_coords(coords)
         ]
         return adj_coords
 
+    def get_diagonal_coords(self, coords):
+        row_idx, col_idx = coords
+        diagonal_coords = [
+            (row_idx - 1, col_idx - 1),
+            (row_idx - 1, col_idx + 1),
+            (row_idx + 1, col_idx - 1),
+            (row_idx + 1, col_idx + 1),
+        ]
+        diagonal_coords = [
+            coords for coords in diagonal_coords
+            if self._is_valid_coords(coords)
+        ]
+        return diagonal_coords
 
-    def place_stone(self, coords, color):
-        """ 
-            attempt to place a stone on the board
-            returns True if it succeeds, and False (with no change to board state) if move is invalid
+    def is_safe_eye(self, coords, color):
         """
+            Returns whether a specified coordinate is "safe" and should not be filled in.
+        """
+        adjacent_coords = self.get_adjacent_coords(coords)
+        adjacent_values = self.board[adjacent_coords]
 
-        logging.debug("attempting to place {} stone at {}".format(color, coords))
+        if not np.all(adjacent_values == color):
+            return False
+
+        diagonal_coords = self.get_diagonal_coords(coords)
+        diagonal_values = self.board[diagonal_coords]
+
+        num_opposite_color = np.sum(diagonal_values == Color.get_opposite_color(color))
+
+        # if we are in the middle, we can afford one stone of opposite color
+        # otherwise, at an edge or corner, any stone of opposite color 
+        # on the diagonals make a fake eye
+        return (len(diagonal_values) == 8 and num_opposite_color <= 1) or num_opposite_color == 0
+
+    def _check_move(self, coords, color):
+        valid_move = False
+        liberties = set()
+        same_color_groups = []
+        opposite_color_groups = []
+        get_return_value = lambda: (valid_move, liberties, same_color_groups, opposite_color_groups)
 
         if self._board[coords] != Color.UNOCCUPIED:
             logging.debug("point is already occupied")
-            return False
+            return get_return_value()
 
         # find adjacent groups
         opposite_color = Color.get_opposite_color(color)
-        same_color_groups = []
-        opposite_color_groups = []
-        liberties = set()
-        valid_move = False
 
         for adj_coords in self.get_adjacent_coords(coords):
             logging.debug("adj coord: {}".format(adj_coords))
@@ -159,9 +192,8 @@ class GoBoard(object):
             if adj_point == Color.UNOCCUPIED:
                 logging.debug("found liberty: {}".format(adj_point))
                 liberties.add(adj_coords)
-
                 # we have a liberty, so the move is valid
-                valid_move = True
+                valid_move = True 
 
             elif adj_point == color:
                 logging.debug("found same color group {}".format(adj_group))
@@ -182,6 +214,16 @@ class GoBoard(object):
                 if would_capture and not_ko_point:
                     valid_move = True
 
+        return get_return_value()
+
+    def place_stone(self, coords, color):
+        """ 
+            attempt to place a stone on the board
+            returns True if it succeeds, and False (with no change to board state) if move is invalid
+        """
+
+        logging.debug("attempting to place {} stone at {}".format(color, coords))
+        valid_move, liberties, same_color_groups, opposite_color_groups = self._check_move(coords, color)
         if not valid_move:
             return False
 
@@ -207,6 +249,20 @@ class GoBoard(object):
             self._ko_point = None
 
         return True
+
+
+    def get_reasonable_moves(self, color):
+        """
+            Returns a numpy array that is True wherever a move would be:
+            1. legal 
+            2. not terrible (e.g. filling in own eye).
+        """
+        reasonable_moves = np.zeros((self.num_rows, self.num_cols))
+        for coords in np.ndindex(*reasonable_moves.shape):
+            valid_move = self._check_move(coords, color)
+            safe_eye = self._is_safe_eye(coords, color)
+            reasonable_moves[coords] = valid_move and not safe_eye
+        return reasonable_moves
 
 
 class GoGame(object):
