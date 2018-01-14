@@ -12,7 +12,7 @@ def create_conv_block(inputs, filters, layers, is_training, activation=True, bat
 			filters=filters,
 			kernel_size=(3, 3),
 			padding='same',
-			use_bias=False,
+			use_bias=False if batch_norm else True,
 			activation=None,
 			name='conv{}'.format(i),
 		)
@@ -35,8 +35,6 @@ def create_graph(board_size):
 
 		For now, model doesn't pass its turns.
 	"""
-
-	logging.debug('Defining the graph:')
 
 	num_rows, num_cols = board_size
 	input_size=(None, num_rows, num_cols, 3)
@@ -75,9 +73,9 @@ def create_graph(board_size):
 				is_training=is_training,
 			)
 
-		# output block
-		# we don't want any ReLU or BatchNorm before the output as this will mess up softmax
-		with tf.variable_scope('block4'):
+		# policy network output
+		with tf.variable_scope('policy_subnetwork'):
+			# no ReLU/BatchNorm before softmax
 			conv_output = create_conv_block(
 				inputs=block3_output, 
 				filters=2, 
@@ -86,51 +84,65 @@ def create_graph(board_size):
 				activation=False,
 				batch_norm=False,
 			)
-			logging.debug("conv_output shape: {}".format(conv_output.get_shape()))
-
 			# collapse height and width to perform softmax across both
 			reshape_output = tf.reshape(
 				conv_output,
 				shape=(-1, num_rows * num_cols, 2),
 				name='collapse_shape',
 			)
-			logging.debug("collapse_shape shape: {}".format(reshape_output.get_shape()))
-
 			# apply softmax
 			softmax_output = tf.nn.softmax(
 				reshape_output,
 				dim=1,
 				name='softmax',
 			)
-			logging.debug("softmax_output shape: {}".format(softmax_output.get_shape()))
-
 			# undo reshape
 			reshape_output = tf.reshape(
 				softmax_output,
 				shape=(-1, num_rows, num_cols, 2),
 				name='restore_shape',
 			)
-			logging.debug("restore_shape shape: {}".format(reshape_output.get_shape()))
+			policy_output = reshape_output
 
-			output_tensor = reshape_output
-
+		# value network output
+		with tf.variable_scope('value_subnetwork'):
+			# no ReLU/BatchNorm before final output
+			conv_output = create_conv_block(
+				inputs=block3_output,
+				filters=1,
+				layers=1,
+				is_training=is_training,
+				activation=False,
+				batch_norm=False,
+			)
+			pool_output = tf.layers.average_pooling2d(
+				inputs=conv_output,
+				strides=1,
+				pool_size=conv_output.get_shape()[1:3],
+			)
+			flatten_output = tf.layers.flatten(inputs=pool_output)
+			value_output = flatten_output
+			
 		init_op = tf.global_variables_initializer()
 		# summary_op = tf.summary.merge_all()
 
 	return {
 		'graph': graph,
-		'input_node': input_tensor.name,
-		'output_node': output_tensor.name,
-		'is_training': is_training.name,
+		'input': input_tensor.name,
+		'policy_output': policy_output.name,
+		'value_output': value_output.name,
 		'init_op': init_op.name,
+		'is_training': is_training.name,
 		# 'summary_op': summary.name,
 	}
 
-
 graph_info = create_graph(board_size=(5, 10))
 graph = graph_info['graph']
-input_tensor = graph.get_tensor_by_name(graph_info['input_node'])
-output_tensor = graph.get_tensor_by_name(graph_info['output_node'])
+
+input_tensor = graph.get_tensor_by_name(graph_info['input'])
+policy_output = graph.get_tensor_by_name(graph_info['policy_output'])
+value_output = graph.get_tensor_by_name(graph_info['value_output'])
+
 is_training = graph.get_tensor_by_name(graph_info['is_training'])
 init_op = graph.get_operation_by_name(graph_info['init_op'])
 # summary_op = graph.get_operation_by_name(graph_info['summary_op'])
@@ -139,7 +151,7 @@ with tf.Session(graph=graph) as session:
 	session.run(init_op)
 
 	res = session.run(
-		output_tensor, 
+		[policy_output, value_output], 
 		feed_dict={input_tensor: np.zeros((16, 5, 10, 3)), is_training: False},
 	)
 
