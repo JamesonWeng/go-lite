@@ -1,6 +1,7 @@
 from go_implementation import Color, GoGame
 
 import logging
+import numpy as np
 import pygame
 
 BURLY_WOOD = (238, 197, 145)
@@ -113,8 +114,8 @@ class GoDisplay(Box):
 		super().__init__(**kwargs)
 		self._go_game = kwargs['go_game']
 
-		self._x_spacing = self.width / (self._go_game.board.num_cols - 1)
-		self._y_spacing = self.height / (self._go_game.board.num_rows - 1)
+		self._x_spacing = self.width / (self._go_game.num_cols - 1)
+		self._y_spacing = self.height / (self._go_game.num_rows - 1)
 
 		self._stone_x_radius = self._x_spacing / 3
 		self._stone_y_radius = self._y_spacing / 3
@@ -135,8 +136,8 @@ class GoDisplay(Box):
 		col_idx = int((x + self._x_spacing / 2 - self.x1) / self._x_spacing)
 		row_idx = int((y + self._y_spacing / 2 - self.y1) / self._y_spacing)
 
-		row_out_of_range = row_idx < 0 or row_idx >= self._go_game.board.num_rows
-		col_out_of_range = col_idx < 0 or col_idx >= self._go_game.board.num_cols
+		row_out_of_range = row_idx < 0 or row_idx >= self._go_game.num_rows
+		col_out_of_range = col_idx < 0 or col_idx >= self._go_game.num_cols
 		if row_out_of_range or col_out_of_range:
 			return None
 
@@ -151,35 +152,37 @@ class GoDisplay(Box):
 			(self.x1, self.y1, self.width, self.height),
 		)
 
-		for row_idx in range(self._go_game.board.num_rows):
+		for row_idx in range(self._go_game.num_rows):
 			pygame.draw.line(
 				surface, 
 				BLACK, 
 				self._get_display_coords((row_idx, 0)),
-				self._get_display_coords((row_idx, self._go_game.board.num_cols - 1)),
+				self._get_display_coords((row_idx, self._go_game.num_cols - 1)),
 				self._line_width,
 			)
 
-		for col_idx in range(self._go_game.board.num_cols):
+		for col_idx in range(self._go_game.num_cols):
 			pygame.draw.line(
 				surface, 
 				BLACK,
 				self._get_display_coords((0, col_idx)),
-				self._get_display_coords((self._go_game.board.num_rows - 1, col_idx)),
+				self._get_display_coords((self._go_game.num_rows - 1, col_idx)),
 				self._line_width,
 			)
 
-		for row_idx, row in enumerate(self._go_game.board):
-			for col_idx, point in enumerate(row):
-				if point == Color.UNOCCUPIED:
-					continue
+		for coords, color in np.ndenumerate(self._go_game.board):
+			if color == Color.UNOCCUPIED:
+				continue
 
-				x, y = self._get_display_coords((row_idx, col_idx))
-				pygame.draw.ellipse(
-					surface,
-					BLACK if point == Color.BLACK else WHITE,
-					(x - self._stone_x_radius, y - self._stone_y_radius, self._stone_x_radius * 2, self._stone_y_radius * 2),
-				)
+			x, y = self._get_display_coords(coords)
+			display_color = BLACK if color == Color.BLACK else WHITE
+			rect = (
+				x - self._stone_x_radius, 
+				y - self._stone_y_radius, 
+				self._stone_x_radius * 2, 
+				self._stone_y_radius * 2,
+			)
+			pygame.draw.ellipse(surface, display_color, rect)
 
 	def handle_event(self, event):
 		""" handle user input - e.g. mouse click on board """
