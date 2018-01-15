@@ -30,8 +30,15 @@ def create_graph(board_size):
 	"""
 		Create the graph for the policy network.
 
-		The output is a probability distribution across the board
+		The input is a 4D tensor with 3 channels representing:
+		- black pieces
+		- white pieces
+		- empty
+
+		The policy output is a probability distribution across the board
 		with two channels: one for black's best move, one for white's best move.
+
+		The value output is a single number representing the expected future discounted rewards.
 
 		For now, model doesn't pass its turns.
 	"""
@@ -122,7 +129,7 @@ def create_graph(board_size):
 			)
 			flatten_output = tf.layers.flatten(inputs=pool_output)
 			value_output = flatten_output
-			
+		
 		init_op = tf.global_variables_initializer()
 		# summary_op = tf.summary.merge_all()
 
@@ -135,26 +142,3 @@ def create_graph(board_size):
 		'is_training': is_training.name,
 		# 'summary_op': summary.name,
 	}
-
-graph_info = create_graph(board_size=(5, 10))
-graph = graph_info['graph']
-
-input_tensor = graph.get_tensor_by_name(graph_info['input'])
-policy_output = graph.get_tensor_by_name(graph_info['policy_output'])
-value_output = graph.get_tensor_by_name(graph_info['value_output'])
-
-is_training = graph.get_tensor_by_name(graph_info['is_training'])
-init_op = graph.get_operation_by_name(graph_info['init_op'])
-# summary_op = graph.get_operation_by_name(graph_info['summary_op'])
-
-with tf.Session(graph=graph) as session:
-	session.run(init_op)
-
-	res = session.run(
-		[policy_output, value_output], 
-		feed_dict={input_tensor: np.zeros((16, 5, 10, 3)), is_training: False},
-	)
-
-	# print(res)
-	# print(res.shape)
-	summary_writer = tf.summary.FileWriter('logs', graph=session.graph)

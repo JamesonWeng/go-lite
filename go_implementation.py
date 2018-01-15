@@ -126,7 +126,8 @@ class GoGame(object):
             Returns whether a specified coordinate is "safe" and should not be filled in.
         """
         adjacent_coords = self._get_adjacent_coords(coords)
-        adjacent_values = self.board[adjacent_coords]
+        rows, cols = zip(*adjacent_coords)
+        adjacent_values = self.board[rows, cols]
 
         if not np.all(adjacent_values == color):
             return False
@@ -232,7 +233,7 @@ class GoGame(object):
             self._num_moves += 1
         return valid_move
 
-    def get_reasonable_moves(self, color):
+    def get_reasonable_moves(self):
         """
             Returns a numpy array that is True wherever a move would be:
             - legal 
@@ -240,8 +241,8 @@ class GoGame(object):
         """
         reasonable_moves = np.zeros_like(self._board)
         for coords in np.ndindex(*reasonable_moves.shape):
-            valid_move, _ = self._check_move(coords, color)
-            safe_eye = self._is_safe_eye(coords, color)
+            valid_move, _ = self._check_move(coords, self._next_color)
+            safe_eye = self._is_safe_eye(coords, self._next_color)
             reasonable_moves[coords] = valid_move and not safe_eye
         return reasonable_moves
 
