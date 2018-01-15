@@ -51,6 +51,10 @@ class GoGame(object):
     def next_color(self):
         return self._next_color
 
+    @property
+    def num_moves(self):
+        return self._num_moves
+
     def is_finished(self):
         return self._num_consecutive_passes >= 2 or self._num_moves > self.MAX_MOVES
 
@@ -234,7 +238,7 @@ class GoGame(object):
             - legal 
             - not terrible (e.g. filling in our own eye).
         """
-        reasonable_moves = np.zeros((self.num_rows, self.num_cols))
+        reasonable_moves = np.zeros_like(self._board)
         for coords in np.ndindex(*reasonable_moves.shape):
             valid_move, _ = self._check_move(coords, color)
             safe_eye = self._is_safe_eye(coords, color)
