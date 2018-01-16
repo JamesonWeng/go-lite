@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import os
 
+logger = logging.getLogger(__name__)
 
 class Color(enum.Enum):
     """ the color of each point on the board """
@@ -29,7 +30,7 @@ class GoGame(object):
     """
     
     KOMI = 6.5  # points awarded to white for starting second
-    MAX_MOVES = 5000 # prevent cycles since superko is not yet implemented
+    MAX_TURNS = 5000 # prevent cycles since superko is not yet implemented
 
     def __init__(self, board_size=(5, 5)):
         """
@@ -37,26 +38,31 @@ class GoGame(object):
         """
         self.num_rows, self.num_cols = board_size
         self._board = np.full(board_size, Color.UNOCCUPIED)
+        self._history = [np.copy(self._board)]
         self._ko_point = None
 
         self._next_color = Color.BLACK
         self._num_consecutive_passes = 0 # game ends after two consecutive passes
-        self._num_moves = 0
+        self._num_turns = 0
 
     @property
     def board(self):
         return self._board
 
     @property
+    def history(self):
+        return self._history
+
+    @property
     def next_color(self):
         return self._next_color
 
     @property
-    def num_moves(self):
-        return self._num_moves
+    def num_turns(self):
+        return self._num_turns
 
     def is_finished(self):
-        return self._num_consecutive_passes >= 2 or self._num_moves > self.MAX_MOVES
+        return self._num_consecutive_passes >= 2 or self._num_turns > self.MAX_TURNS
 
     def _is_valid_coords(self, coords):
         row_idx, col_idx = coords
@@ -107,41 +113,6 @@ class GoGame(object):
 
         return stones, liberties
 
-    def _get_diagonal_coords(self, coords):
-        row_idx, col_idx = coords
-        diagonal_coords = [
-            (row_idx - 1, col_idx - 1),
-            (row_idx - 1, col_idx + 1),
-            (row_idx + 1, col_idx - 1),
-            (row_idx + 1, col_idx + 1),
-        ]
-        diagonal_coords = [
-            coords for coords in diagonal_coords
-            if self._is_valid_coords(coords)
-        ]
-        return diagonal_coords
-
-    def _is_safe_eye(self, coords, color):
-        """
-            Returns whether a specified coordinate is "safe" and should not be filled in.
-        """
-        adjacent_coords = self._get_adjacent_coords(coords)
-        rows, cols = zip(*adjacent_coords)
-        adjacent_values = self.board[rows, cols]
-
-        if not np.all(adjacent_values == color):
-            return False
-
-        diagonal_coords = self._get_diagonal_coords(coords)
-        diagonal_values = self.board[diagonal_coords]
-
-        num_opposite_color = np.sum(diagonal_values == Color.get_opposite_color(color))
-
-        # if we are in the middle, we can afford one stone of opposite color
-        # otherwise, at an edge or corner, any stone of opposite color 
-        # on the diagonals make a fake eye
-        return (len(diagonal_values) == 8 and num_opposite_color <= 1) or num_opposite_color == 0
-
     def _check_move(self, coords, color):
         """
             Returns (valid_move, opposite_color_groups)
@@ -152,7 +123,7 @@ class GoGame(object):
         opposite_color_groups = []
 
         if self._board[coords] != Color.UNOCCUPIED:
-            logging.debug("point is already occupied")
+            logger.debug("point is already occupied")
             return valid_move, opposite_color_groups
 
         # find adjacent groups
@@ -161,7 +132,7 @@ class GoGame(object):
 
         while adj_coords_list:
             adj_coords = adj_coords_list.pop()
-            logging.debug("processing adj coords: {}".format(adj_coords))
+            logger.debug("processing adj coords: {}".format(adj_coords))
 
             adj_point = self._board[adj_coords]
             adj_group_stones, adj_group_liberties = self._get_group(adj_coords)
@@ -170,18 +141,18 @@ class GoGame(object):
             adj_coords_list = [c for c in adj_coords_list if c not in adj_group_stones]
 
             if adj_point == Color.UNOCCUPIED:
-                logging.debug("found liberty")
+                logger.debug("found liberty")
                 valid_move = True # we have a liberty, so this move is legal
 
             elif adj_point == color:
-                logging.debug("found same color group")
+                logger.debug("found same color group")
 
                 # the move is valid if group would have a liberty even after we place the stone
                 if len(adj_group_liberties) > 1:
                     valid_move = True
 
             elif adj_point == opposite_color:
-                logging.debug("found opposite color group")
+                logger.debug("found opposite color group")
                 opposite_color_groups.append((adj_group_stones, adj_group_liberties))
 
                 # move is valid if we would capture a group of the oppposite color
@@ -194,7 +165,7 @@ class GoGame(object):
         return valid_move, opposite_color_groups
 
     def _place_stone(self, coords, color):
-        logging.debug("attempting to place {} stone at {}".format(color, coords))
+        logger.debug("attempting to place {} stone at {}".format(color, coords))
         valid_move, opposite_color_groups = self._check_move(coords, color)
         if not valid_move:
             return False
@@ -223,15 +194,61 @@ class GoGame(object):
             returns True if it succeeds, and False (with no change to board state) if move is invalid
         """
         if self.is_finished():
-            logging.debug("game has already ended")
+            logger.debug("game has already ended")
             return False
 
         valid_move = self._place_stone(coords, self._next_color)
         if valid_move:
+            self._history.append(np.copy(self._board))
             self._next_color = Color.get_opposite_color(self._next_color)
             self._num_consecutive_passes = 0
-            self._num_moves += 1
+            self._num_turns += 1
         return valid_move
+
+    def pass_turn(self):
+        if self.is_finished():
+            logger.debug("game has already ended")
+            return
+
+        self._next_color = Color.get_opposite_color(self._next_color)
+        self._num_consecutive_passes += 1
+        self._num_turns += 1
+
+    def _get_diagonal_coords(self, coords):
+        row_idx, col_idx = coords
+        diagonal_coords = [
+            (row_idx - 1, col_idx - 1),
+            (row_idx - 1, col_idx + 1),
+            (row_idx + 1, col_idx - 1),
+            (row_idx + 1, col_idx + 1),
+        ]
+        diagonal_coords = [
+            coords for coords in diagonal_coords
+            if self._is_valid_coords(coords)
+        ]
+        return diagonal_coords
+
+    def _is_safe_eye(self, coords, color):
+        """
+            Returns whether a specified coordinate is "safe" and should not be filled in.
+        """
+        adjacent_coords = self._get_adjacent_coords(coords)
+        rows, cols = zip(*adjacent_coords)
+        adjacent_values = self.board[rows, cols]
+
+        if not np.all(adjacent_values == color):
+            return False
+
+        diagonal_coords = self._get_diagonal_coords(coords)
+        rows, cols = zip(*diagonal_coords)
+        diagonal_values = self.board[rows, cols]
+
+        num_opposite_color = np.sum(diagonal_values == Color.get_opposite_color(color))
+
+        # if we are in the middle, we can afford one stone of opposite color
+        # otherwise, at an edge or corner, any stone of opposite color 
+        # on the diagonals make a fake eye
+        return (len(diagonal_values) == 8 and num_opposite_color <= 1) or num_opposite_color == 0
 
     def get_reasonable_moves(self):
         """
@@ -246,21 +263,13 @@ class GoGame(object):
             reasonable_moves[coords] = valid_move and not safe_eye
         return reasonable_moves
 
-    def pass_turn(self):
-        if self.is_finished():
-            logging.debug("game has already ended")
-            return
-
-        self._next_color = Color.get_opposite_color(self._next_color)
-        self._num_consecutive_passes += 1
-
     def _get_score(self, color):
         """
             Under Tromp-Taylor scoring, the score is the combined total of:
             - the number of stones the player has on the board
             - the number of empty points that reach only the player's stones
         """
-        if self._num_moves == 0:
+        if np.all(self._board == Color.UNOCCUPIED):
             return 0
 
         # we calculate the points by floodfilling the board starting from stones of opposite color
@@ -280,7 +289,7 @@ class GoGame(object):
 
         # flood fill changes the board
         # so we do it on a copy
-        score_board = copy.deepcopy(self._board)
+        score_board = np.copy(self._board)
         opposite_color = Color.get_opposite_color(color)
         for coords in np.ndindex(*score_board.shape):
             flood_fill(score_board, coords, opposite_color)

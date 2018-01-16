@@ -2,8 +2,6 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-logging.basicConfig(level=logging.DEBUG)
-
 def create_conv_block(inputs, filters, layers, is_training, activation=True, batch_norm=True):
 	curr = inputs
 	for i in range(layers):
@@ -30,17 +28,18 @@ def create_graph(board_size):
 	"""
 		Create the graph for the policy network.
 
-		The input is a 4D tensor with 3 channels representing:
-		- black pieces
-		- white pieces
-		- empty
+		The input is a batch_size x num_rows x num_cols x 3 tensor,
+		where the entries in the 3 channels are respectively set to:
+		- 1 if occupied by stone of current color
+		- 1 if occupied by stone of opposite color
+		- 1 if unoccupied
 
 		The policy output is a probability distribution across the board
-		with two channels: one for black's best move, one for white's best move.
+		for the current color's best move.
 
 		The value output is a single number representing the expected future discounted rewards.
 
-		For now, model doesn't pass its turns.
+		For now, model doesn't pass any its turns.
 	"""
 
 	num_rows, num_cols = board_size
@@ -85,7 +84,7 @@ def create_graph(board_size):
 			# no ReLU/BatchNorm before softmax
 			conv_output = create_conv_block(
 				inputs=block3_output, 
-				filters=2, 
+				filters=1,
 				layers=1, 
 				is_training=is_training,
 				activation=False,
@@ -94,7 +93,7 @@ def create_graph(board_size):
 			# collapse height and width to perform softmax across both
 			reshape_output = tf.reshape(
 				conv_output,
-				shape=(-1, num_rows * num_cols, 2),
+				shape=(-1, num_rows * num_cols),
 				name='collapse_shape',
 			)
 			# apply softmax
@@ -106,7 +105,7 @@ def create_graph(board_size):
 			# undo reshape
 			reshape_output = tf.reshape(
 				softmax_output,
-				shape=(-1, num_rows, num_cols, 2),
+				shape=(-1, num_rows, num_cols),
 				name='restore_shape',
 			)
 			policy_output = reshape_output
