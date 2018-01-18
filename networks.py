@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 class ActorCritic(object):
 	"""
@@ -100,46 +101,34 @@ class ActorCritic(object):
 					batch_norm=False,
 				)
 				# remove last dimension of size 1
-				reshape_output = tf.reshape(
+				logits = tf.reshape(
 					conv_output,
 					shape=(-1, num_rows, num_cols),
-					name='flatten',
+					name='squeeze',
 				)
 
-				# we perform our own softmax
+				# we have to compute our own softmax 
+				# so that we can ignore illegal moves
+
+				# for stability, we must first subtract the maximum of the logits in each batch element
 				# so we can ignore illegal moves
-				exponentiated_output = tf.exp(reshape_output)
-				logger.debug("exponentiated_output shape: {}".format(exponentiated_output.get_shape()))
-				
-				masked_output = exponentiated_output * self.reasonable_moves
-				logger.debug("masked_output shape: {}".format(masked_output.get_shape()))
-				
-				sum_output = tf.reduce_sum(masked_output, axis=(1, 2))
-				logger.debug("sum_output shape: {}".format(sum_output.get_shape()))
+				logits_max = tf.reduce_max(logits, axis=(1, 2), keep_dims=True)
+				logger.debug("logits_max shape: {}".format(logits_max.get_shape()))
 
-				policy_output = masked_output / (sum_output[:, tf.newaxis, tf.newaxis] + 1e-7)
+				scaled_logits = logits - logits_max
+				logger.debug("scaled_logits shape: {}".format(scaled_logits))
+
+				exp_logits = tf.exp(scaled_logits)
+				logger.debug("exp_logits shape: {}".format(exp_logits.get_shape()))
+				
+				masked_logits = exponentiated_logits * self.reasonable_moves
+				logger.debug("masked_logits shape: {}".format(masked_logits.get_shape()))
+				
+				sum_logits = tf.reduce_sum(masked_logits, axis=(1, 2), keep_dims=True)
+				logger.debug("sum_logits shape: {}".format(sum_logits.get_shape()))
+
+				policy_output = masked_logits / (sum_logits + 1e-7) # add epsilon so don't divide by 0
 				logger.debug("policy_output shape: {}".format(policy_output.get_shape()))
-
-
-				# collapse height and width to perform softmax across both
-				# reshape_output = tf.reshape(
-				# 	conv_output,
-				# 	shape=(-1, num_rows * num_cols),
-				# 	name='collapse_shape',
-				# )
-				# # apply softmax
-				# softmax_output = tf.nn.softmax(
-				# 	reshape_output,
-				# 	dim=1,
-				# 	name='softmax',
-				# )
-				# # undo reshape
-				# reshape_output = tf.reshape(
-				# 	softmax_output,
-				# 	shape=(-1, num_rows, num_cols),
-				# 	name='restore_shape',
-				# )
-				# policy_output = reshape_output
 
 			# value network output
 			with tf.variable_scope('value_subnetwork'):
@@ -165,9 +154,7 @@ class ActorCritic(object):
 		# LOSS CALCULATION
 
 		# pass in the chosen action for this state: tuple of (row_idx, col_idx)
-		self.action = tf.placeholder(tf.float32, shape=(None, 2), name='action')
-		# pass in the board state after the action from policy network
-		self.post_action_board = tf.placeholder(tf.float32, shape=self.input_shape)
+		self.actions = tf.placeholder(tf.int32, shape=(None, 2), name='actions')
 		# advantages = reward + gamma * value(next_state) - value(current_state)
 		self.advantages = tf.placeholder(tf.float32, shape=(None,), name='advantages')
 		# discounted rewards
@@ -175,12 +162,53 @@ class ActorCritic(object):
 		
 		# loss
 		with tf.variable_scope('loss'):
-			policy_loss = self.policy_output
+			# policy loss
+			batch_indices = tf.range(tf.shape(self.actions)[0])[:, tf.newaxis]
+			logger.debug("batch_indices shape: {}".format(batch_indices.get_shape()))
 
-			value_loss = tf.reduce_mean(self.advantages ** 2)
+			self.action_indices = tf.concat([batch_indices, self.actions], axis=-1)
+			logger.debug("indices shape: {}".format(self.action_indices.get_shape()))
 
+			self.action_probabilities = tf.gather_nd(self.policy_output, self.action_indices)
+			logger.debug("action_probabilities shape: {}".format(self.action_probabilities.get_shape()))
+
+			policy_loss = -tf.reduce_mean(tf.log(self.action_probabilities) * self.advantages)
+
+			# value loss
+			value_loss = tf.reduce_mean((self.rewards - self.value_output) ** 2)
+
+			# reg loss
 			reg_loss = tf.losses.get_regularization_loss()
-			loss = value_loss + reg_loss
-
+			
+			# total loss
+			self.loss = policy_loss + value_loss + reg_loss
 
 		self.init_op = tf.global_variables_initializer()
+
+# test
+if __name__ == '__main__':
+	model = ActorCritic((5, 10))
+
+	with tf.Session() as session:
+		session.run(model.init_op)
+
+		actions = [(2, 8), (0, 1)]
+		batch_shape = (2, 5, 10, 3)
+		batch_input = np.reshape(np.arange(np.prod(batch_shape)), batch_shape)
+		is_training = False
+		reasonable_moves = np.ones((2, 5, 10))
+		reasonable_moves[1, 3, 4] = 0
+
+		policy_output, action_indices, action_probabilities = session.run(
+			[model.policy_output, model.action_indices, model.action_probabilities],
+			feed_dict={
+				model.input: batch_input,
+				model.is_training: is_training,
+				model.actions: actions,
+				model.reasonable_moves: reasonable_moves,
+			}
+		)
+
+		print("policy_output: {}".format(policy_output))
+		print("action_indices: {}".format(action_indices))
+		print("action_probabilities: {}".format(action_probabilities))
