@@ -196,9 +196,9 @@ with graph.as_default():
 	saver = tf.train.Saver()
 
 with tf.Session(graph=graph) as session:
-	NUM_EXPERIENCES = 1
+	NUM_EXPERIENCES = 10
 
-	checkpoint_interval = 10
+	checkpoint_interval = 1000
 	global_step = 0
 	summary_writer = tf.summary.FileWriter('logs', graph=session.graph)
 
@@ -231,5 +231,6 @@ with tf.Session(graph=graph) as session:
 				logger.debug("saving model")
 				saver.save(session, os.path.join(CHECKPOINT_DIR, 'model'), global_step=global_step)
 
-				with open('history.pkl', 'wb') as f:
+				replay_save_path = os.path.join(CHECKPOINT_DIR, 'replay_{}.pkl'.format(global_step))
+				with open(replay_save_path, 'wb') as f:
 					pickle.dump(go_game.history, f)
