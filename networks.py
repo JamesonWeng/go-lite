@@ -259,7 +259,7 @@ if __name__ == '__main__':
 		advantages = [2, 5]
 		rewards = [0.99 ** (batch_shape[0] - i) for i in range(batch_shape[0])]
 
-		tensors = np.array([
+		nodes = np.array([
 			["infinity_mask", model.infinity_mask],
 			["masked_logits", model.masked_logits],
 			["max_logits", model.max_logits],
@@ -279,8 +279,8 @@ if __name__ == '__main__':
 			["optimize", model.optimize],
 		])
 
-		tensor_values = session.run(
-			tensors[:, 1].tolist(),
+		node_values = session.run(
+			nodes[:, 1].tolist(),
 			feed_dict={
 				model.input: batch_input,
 				model.is_training: is_training,
@@ -291,8 +291,8 @@ if __name__ == '__main__':
 			}
 		)
 
-		for (tensor_name, value) in zip(tensors[:, 0], tensor_values):
-			print("tensor: {}".format(tensor_name))
-			print("{}\n".format(value))
+		for (node_name, node_value) in zip(nodes[:, 0], node_values):
+			print("node: {}".format(node_name))
+			print("{}\n".format(node_value))
 
 		summary_writer = tf.summary.FileWriter('logs', graph=session.graph)

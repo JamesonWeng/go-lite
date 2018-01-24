@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # constants & globals
-BATCH_SIZE = 8
+BATCH_SIZE = 1
 BUFFER_SIZE = int(1e5)
 BOARD_SIZE = (5, 5)
 GAMMA = 0.99
@@ -145,7 +145,7 @@ def generate_experiences(session, model):
 				"tried to play {} for color {} on board {} with predictions {}"
 				.format(next_move, current_color, go_game.board, policy_output)
 			)
-			return
+			raise Exception()
 
 		# save some values
 		player_history = history[current_color]
@@ -200,22 +200,34 @@ with tf.Session(graph=graph) as session:
 
 	checkpoint_interval = 1000
 	global_step = 0
+	max_steps = 2000
 	summary_writer = tf.summary.FileWriter('logs', graph=session.graph)
 
 	session.run(model.init_op)
 
-	while True:
+	while global_step < max_steps:
 		for _ in range(NUM_EXPERIENCES):
 			go_game = generate_experiences(session, model)
 			logger.debug("experience buffer length: {}".format(experience_buffer.get_length()))
 
 		for _ in range(experience_buffer.get_length() // BATCH_SIZE):
-			global_step += 1
-
 			actions, advantages, boards, reasonable_moves, rewards = experience_buffer.get_batch()
-			loss, _ = session.run(
 
-				[model.loss, model.optimize],
+			nodes = np.array([
+				# ["reasonable_moves", model.reasonable_moves],
+				# ["infinity_mask", model.infinity_mask],
+				# ["logits", model.logits],
+				# ["masked_logits", model.masked_logits],
+				# ["max_logits", model.max_logits],
+				# ["scaled_logits", model.scaled_logits],
+				# ["exp_logits", model.exp_logits],
+				# ["masked_exp_logits", model.masked_exp_logits],
+				["loss", model.loss],
+				[None, model.optimize],
+			])
+
+			node_values = session.run(
+				nodes[:, 1].tolist(),
 				feed_dict = {
 					model.input: boards,
 					model.is_training: True,
@@ -225,7 +237,11 @@ with tf.Session(graph=graph) as session:
 					model.rewards: rewards,
 				},
 			)
-			logger.info("global_step: {} loss: {}".format(global_step, loss))
+
+			logger.info("global_step: {}".format(global_step))
+			for node_name, node_value in zip(nodes[:, 0], node_values):
+				if node_name:
+					logger.info("{}: {}".format(node_name, node_value))
 
 			if global_step % checkpoint_interval == 0:
 				logger.debug("saving model")
@@ -234,3 +250,5 @@ with tf.Session(graph=graph) as session:
 				replay_save_path = os.path.join(CHECKPOINT_DIR, 'replay_{}.pkl'.format(global_step))
 				with open(replay_save_path, 'wb') as f:
 					pickle.dump(go_game.history, f)
+
+			global_step += 1
