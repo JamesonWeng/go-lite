@@ -126,7 +126,7 @@ class ActorCritic(object):
 			max_logits = tf.reduce_max(masked_logits, axis=(1, 2), keep_dims=True)
 			logger.debug("max_logits shape: {}".format(max_logits.get_shape()))
 
-			scaled_logits = logits - max_logits
+			scaled_logits = masked_logits - max_logits
 			logger.debug("scaled_logits shape: {}".format(scaled_logits))
 
 			exp_logits = tf.exp(scaled_logits)
@@ -214,6 +214,7 @@ class ActorCritic(object):
 		self.reasonable_moves = reasonable_moves
 		self.is_training = is_training
 
+		self.logits = logits
 		self.infinity_mask = infinity_mask
 		self.masked_logits = masked_logits
 		self.max_logits = max_logits
