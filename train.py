@@ -200,7 +200,7 @@ with tf.Session(graph=graph) as session:
 
 	checkpoint_interval = 1000
 	global_step = 0
-	max_steps = 2000
+	max_steps = int(1e5)
 	summary_writer = tf.summary.FileWriter('logs', graph=session.graph)
 
 	session.run(model.init_op)

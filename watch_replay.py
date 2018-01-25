@@ -10,7 +10,7 @@ SPACING = 50
 logging.basicConfig(level=logging.DEBUG)
 pygame.init()
 
-with open('history.pkl', 'rb') as f:
+with open(sys.argv[1], 'rb') as f:
 	history = pickle.load(f)
 
 history_display = HistoryDisplay(
